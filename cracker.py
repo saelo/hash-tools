@@ -15,11 +15,12 @@ HASHFILE = ""	# must be in format hash:salt
 #
 # global vars
 #
-words = None
+words = None	# shared memory segment containing the wordlist
+
 
 '''
  hash function
- override as needed
+ override as needed, currently sha1(salt + sha1(salt + sha1(password))) (as used in e.g. wcf)
 '''
 def gethash(salt, passwd):
 	return sha1(salt + sha1(salt + sha1(passwd).hexdigest()).hexdigest()).hexdigest()
@@ -54,29 +55,23 @@ def entry(args):
 
 
 
-
 '''
  main - reads input files and manages worker threads
 '''
 def main():
 	#
-	# open files
+	# process files
 	#
 	print("[*] parsing wordlist...")
 	global WORDLIST, HASHFILE, words, result
 	wordlist = open(WORDLIST, 'r')
+	# load wordlist in shared memory segment
 	words = Array('c', wordlist.read(), lock=False)
 	wordlist.close()
+
 	print("[*] reading hashes...")
 	hashes = open(HASHFILE, 'r').read().split("\n")
 	hashlist = []
-
-	#
-	# crack
-	#
-	print("[*] beginning cracking")
-	pool = Pool(processes=8)
-
 	for hash in hashes:
 		data = hash.split(":")
 		if len(data) > 1:
@@ -84,7 +79,11 @@ def main():
 			salt = data[1].strip()
 			hashlist.append((hashv, salt))
 
-
+	#
+	# crack
+	#
+	print("[*] beginning cracking")
+	pool = Pool(processes=8)
 	pool.map(entry, hashlist)
 
 	print("[*] shutting down")
