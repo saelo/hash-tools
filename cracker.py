@@ -9,8 +9,8 @@ from multiprocessing import Pool, Array, Value
 #
 # config
 #
-WORDLIST         = "./cracklist.txt"
-HASHFILE         = "./hashes.txt"	# must be in format hash:salt
+WORDLIST         = ""
+HASHFILE         = ""	# must be in format hash:salt
 NUM_PROCESSES    = 8
 PERC_GRANULARITY = 50000	# number of processed words after which to update percentage
 
