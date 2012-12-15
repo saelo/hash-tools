@@ -46,7 +46,7 @@ def crack(hashv, salt):
 			count += 1
 			if count % PERC_GRANULARITY == 0:
 				curr.value += PERC_GRANULARITY
-				print("[%%] %f" % ((curr.value / total.value) * 100))
+				print("[%%] %.02f" % ((float(curr.value) / total.value) * 100))
 			if hashv == gethash(salt, word).lower():
 				res = (word, hashv)
 				print("[!] found %s for %s" % res)
@@ -55,8 +55,8 @@ def crack(hashv, salt):
 			
 		word += char
 	
-	curr.value += (num_words - count) if count != num_words else count % PERC_GRANULARITY	 	# add reminder to current value
-	print("[%%] %f" % ((curr.value / total.value) * 100))
+	curr.value += num_words - (count / PERC_GRANULARITY) * PERC_GRANULARITY if count != num_words else count % PERC_GRANULARITY	 	# add reminder to current value
+	print("[%%] %.02f" % ((float(curr.value) / total.value) * 100))
 	return res
 
 '''
@@ -98,7 +98,7 @@ def main():
 			hashlist.append((hashv, salt))
 
 	total = Value('i', num_words * len(hashlist))
-	curr = Value('d', 0.0)
+	curr = Value('i', 0)
 
 	# 
 	# free resources
