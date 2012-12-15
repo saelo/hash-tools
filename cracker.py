@@ -37,16 +37,19 @@ def crack(hashv, salt):
 	word = ""
 	for char in words:
 		if char == "\n":
+			word = word.strip()
 			count += 1
 			if count % 100000 == 0:
 				curr.value += 100000
-				print("[%] %f" % (curr.value / total.value))
-			if hashv == gethash(salt, word.strip()).lower():
-				print("[!] found %s for %s" % (word.strip(), hashv))
-				return (word.strip(), hashv)
+				print("[%%] %f" % ((curr.value / total.value) * 100))
+			if hashv == gethash(salt, word).lower():
+				print("[!] found %s for %s" % (word, hashv))
+				return (word, hashv)
 			word = ""
 			
 		word += char
+
+	return None
 
 '''
  thread entry point
@@ -86,7 +89,7 @@ def main():
 			salt = data[1].strip()
 			hashlist.append((hashv, salt))
 
-	total = Value('i', len(wordsstr.split("\n")))
+	total = Value('i', len(wordsstr.split("\n")) * len(hashlist))
 	curr = Value('d', 0.0)
 
 	wordlist.close()
@@ -96,9 +99,13 @@ def main():
 	#
 	print("[*] beginning cracking")
 	pool = Pool(processes=8)
-	pool.map(entry, hashlist)
+	results = pool.map(entry, hashlist)
 
-	print("[*] shutting down")
+	print("[*] done")
+
+	for result in results:
+		if result not None:
+			print("%s:%s" % (result))
 
 
 if __name__ == "__main__":
