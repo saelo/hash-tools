@@ -5,22 +5,25 @@
 
 from hashlib import sha1
 from multiprocessing import Pool, Array, Value
+from multiprocessing.sharedctypes import RawArray
 
 #
 # config
 #
-WORDLIST         = ""
+WORDLIST 	 = ""
 HASHFILE         = ""	# must be in format hash:salt
 NUM_PROCESSES    = 8
-PERC_GRANULARITY = 50000	# number of processed words after which to update percentage
+PERC_GRANULARITY = 500000	# number of processed words after which to update percentage
+SHARED_MEM_SIZE  = 100000000   # number of bytes to allocate for the shared memory segment
 
 #
 # global vars
 #
 words     = None	# shared memory segment containing the wordlist
 num_words = 0
+curr_words = None	# shared variable containing current number of words
 curr      = None	# shared variable containing the current total count of processed words and hashes
-total     = None	# shared variable containing the total count of words times hashes
+total     = 0		# total count of words times hashes
 
 
 '''
@@ -35,10 +38,10 @@ def gethash(salt, passwd):
  try to crack given tuple of hash and salt
 '''
 def crack(hashv, salt):
-	global PERC_GRANULARITY, words, curr, total
+	global PERC_GRANULARITY, words, curr, total, curr_words
 	count = 0
-	word = ""
-	res = None
+	word  = ""
+	res   = None
 
 	for char in words:
 		if char == "\n":
@@ -46,17 +49,20 @@ def crack(hashv, salt):
 			count += 1
 			if count % PERC_GRANULARITY == 0:
 				curr.value += PERC_GRANULARITY
-				print("[%%] %.02f" % ((float(curr.value) / total.value) * 100))
+				print("[%%] %.02f" % ((float(curr.value) / total) * 100))
 			if hashv == gethash(salt, word).lower():
 				res = (word, hashv)
+				print("[!]")
 				print("[!] found %s for %s" % res)
+				print("[!]")
 				break		# done
 			word = ""
-			
-		word += char
-	
-	curr.value += num_words - (count / PERC_GRANULARITY) * PERC_GRANULARITY if count != num_words else count % PERC_GRANULARITY	 	# add reminder to current value
-	print("[%%] %.02f" % ((float(curr.value) / total.value) * 100))
+		else:		
+			word += char
+
+
+	curr.value += curr_words.value - (count / PERC_GRANULARITY) * PERC_GRANULARITY  	# add reminder to current value
+	print("[%%] %.02f" % ((float(curr.value) / total) * 100))
 	return res
 
 '''
@@ -76,16 +82,11 @@ def entry(args):
  main - reads input files and manages worker threads
 '''
 def main():
+	global WORDLIST, HASHFILE, words, result, curr, total, num_words, curr_words
+
 	#
 	# process files
 	#
-	print("[*] parsing wordlist...")
-	global WORDLIST, HASHFILE, words, result, curr, total, num_words
-	wordlist_file = open(WORDLIST, 'r')
-	wordlist = wordlist_file.read()
-	num_words = len(wordlist.split("\n"))
-	# load wordlist in shared memory segment
-	words = Array('c', wordlist, lock=False)
 
 	print("[*] reading hashes...")
 	hashes = open(HASHFILE, 'r')
@@ -96,23 +97,55 @@ def main():
 			hashv = data[0].strip()
 			salt = data[1].strip()
 			hashlist.append((hashv, salt))
+	hashes.close() 
 
-	total = Value('i', num_words * len(hashlist))
+
+	print("[*] parsing wordlist...")
+	words = Array('c', SHARED_MEM_SIZE, lock=False)		# allocate shared memory segment
+	# get line count
+	wordlist_file = open(WORDLIST, 'r')
+	lines = 0
+	for line in wordlist_file:
+		lines += 1
+	
+	total = lines * len(hashlist)
 	curr = Value('i', 0)
+	curr_words = Value('i', 0)
+	wordlist_file.seek(0)	# get back to beginning
 
-	# 
-	# free resources
-	#
-	wordlist_file.close()
-	del wordlist		# takes up quite a bit of memory, so lets free it
-	hashes.close()
+
 
 	#
 	# crack
 	#
 	print("[*] beginning cracking")
 	pool = Pool(processes=NUM_PROCESSES)
-	results = pool.map(entry, hashlist)
+	results = []
+
+	current_char_count = 0
+	words_raw = ""
+	for line in wordlist_file:
+		length = len(line)
+		if length + current_char_count < SHARED_MEM_SIZE:
+			words_raw += line
+			current_char_count += length
+		else:
+			print("[*] next round")
+			curr_words.value = len(words_raw.split("\n"))
+			words.raw = words_raw + (SHARED_MEM_SIZE - len(words_raw)) * '0'	# clear space
+			words_raw = line
+			current_char_count = length
+
+			# let workers do work!
+			results.extend(pool.map(entry, hashlist))
+
+			# remove cracked hashes
+			# TODO
+
+	print("[*] final round")
+	curr_words.value = len(words_raw.split("\n"))
+	words.raw = words_raw + (SHARED_MEM_SIZE - len(words_raw)) * '0'
+	results.extend(pool.map(entry, hashlist))
 
 	print("[*] done")
 
